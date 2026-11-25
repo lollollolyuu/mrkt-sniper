@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+
+<html lang="ru">
+
+<head>
+
+  <meta charset="UTF-8">
+
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <title>MRKT Sniper</title>
+
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+
+  <style>
+
+    body {
+
+      margin: 0;
+
+      padding: 20px;
+
+      background: #10131c;
+
+      color: white;
+
+      font-family: Arial, sans-serif;
+
+    }
+
+    h1 { color: #65e6a5; }
+
+    .panel {
+
+      background: #1d2332;
+
+      padding: 16px;
+
+      border-radius: 14px;
+
+      margin-bottom: 15px;
+
+    }
+
+    label { display: block; margin-top: 12px; }
+
+    input {
+
+      box-sizing: border-box;
+
+      width: 100%;
+
+      padding: 12px;
+
+      margin-top: 6px;
+
+      border: 0;
+
+      border-radius: 8px;
+
+      background: #30394c;
+
+      color: white;
+
+      font-size: 16px;
+
+    }
+
+    button {
+
+      width: 100%;
+
+      padding: 13px;
+
+      margin-top: 14px;
+
+      border: 0;
+
+      border-radius: 9px;
+
+      background: #65e6a5;
+
+      color: #10131c;
+
+      font-weight: bold;
+
+      font-size: 16px;
+
+    }
+
+    .muted { color: #aab3c5; }
+
+  </style>
+
+</head>
+
+<body>
+
+  <h1>MRKT Sniper</h1>
+
+  <p class="muted">Панель управления поиском лотов</p>
+
+  <div class="panel">
+
+    <h3>Настройки поиска</h3>
+
+    <label>Максимальная цена</label>
+
+    <input id="price" type="number" min="0" placeholder="Например, 100">
+
+    <label>Минимальная скидка (%)</label>
+
+    <input id="discount" type="number" min="0" max="100" placeholder="Например, 20">
+
+    <label>Интервал проверки (секунд)</label>
+
+    <input id="interval" type="number" value="10" min="10">
+
+    <button onclick="saveSettings()">Сохранить настройки</button>
+
+    <p id="status" class="muted"></p>
+
+  </div>
+
+  <div class="panel">
+
+    <h3>Найденные лоты</h3>
+
+    <p class="muted">Пока лоты не подключены к боту.</p>
+
+    <div id="lots"></div>
+
+  </div>
+
+  <script>
+
+    const tg = window.Telegram.WebApp;
+
+    tg.ready();
+
+    tg.expand();
+
+    function saveSettings() {
+
+      const settings = {
+
+        price: document.getElementById("price").value,
+
+        discount: document.getElementById("discount").value,
+
+        interval: document.getElementById("interval").value
+
+      };
+
+      localStorage.setItem("mrktSettings", JSON.stringify(settings));
+
+      document.getElementById("status").textContent =
+
+        "Настройки сохранены на этом устройстве!";
+
+    }
+
+    const saved = localStorage.getItem("mrktSettings");
+
+    if (saved) {
+
+      const settings = JSON.parse(saved);
+
+      document.getElementById("price").value = settings.price;
+
+      document.getElementById("discount").value = settings.discount;
+
+      document.getElementById("interval").value = settings.interval;
+
+    }
+
+  </script>
+
+</body>
+
+</html>
