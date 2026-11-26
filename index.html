@@ -14,35 +14,28 @@
 
   <style>
 
-    body {
-
-      margin: 0;
-
-      padding: 20px;
-
-      background: #10131c;
-
-      color: white;
-
-      font-family: Arial, sans-serif;
-
-    }
-
-    h1 { color: #65e6a5; }
+    :root { color-scheme: dark; --bg:#0b1220; --panel:#141f33; --card:#1b2b43; --accent:#62e6ad; --text:#f4f7fb; --muted:#91a4bf; }
+    * { box-sizing: border-box; }
+    body { margin:0; padding:18px; background:radial-gradient(circle at 100% 0,#203d58 0,#0b1220 42%); color:var(--text); font-family:Inter,Arial,sans-serif; line-height:1.45; }
+    main { max-width:760px; margin:auto; }
+    h1 { margin:0; color:var(--accent); letter-spacing:-.03em; }
+    h3,h4 { margin:0 0 12px; }
 
     .panel {
 
-      background: #1d2332;
+      background: rgba(20,31,51,.9);
 
-      padding: 16px;
+      padding: 18px;
 
       border-radius: 14px;
 
-      margin-bottom: 15px;
+      margin-bottom: 14px;
+      border:1px solid rgba(255,255,255,.06);
+      box-shadow:0 10px 30px rgba(0,0,0,.18);
 
     }
 
-    label { display: block; margin-top: 12px; }
+    label { display:block; margin-top:12px; color:var(--muted); font-size:13px; }
 
     input {
 
@@ -58,7 +51,7 @@
 
       border-radius: 8px;
 
-      background: #30394c;
+      background: #0f1a2c;
 
       color: white;
 
@@ -78,7 +71,7 @@
 
       border-radius: 9px;
 
-      background: #65e6a5;
+      background: linear-gradient(135deg,#62e6ad,#41c9d8);
 
       color: #10131c;
 
@@ -88,7 +81,14 @@
 
     }
 
-    .muted { color: #aab3c5; }
+    .muted { color:var(--muted); }
+    select { width:100%; padding:11px; margin:6px 0 8px; border:1px solid #29415e; border-radius:10px; background:#0f1a2c; color:var(--text); }
+    #market-results h4 { color:var(--accent); margin-top:20px; }
+    .metric { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:8px; margin:10px 0; }
+    .metric p,.trade-card { margin:0; padding:11px 12px; border-radius:11px; background:var(--card); border:1px solid rgba(255,255,255,.05); }
+    .trade-card { display:flex; justify-content:space-between; gap:10px; align-items:center; margin:7px 0; }
+    .trade-card a { color:var(--accent); white-space:nowrap; font-size:13px; }
+    #market-status { padding:9px 11px; border-radius:9px; background:#10253a; }
 
     .gift-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(72px, 100%), 1fr)); gap: 8px; list-style: none; padding: 0; margin: 0; }
     .gift-list li { display: grid; justify-items: center; gap: 5px; padding: 10px 2px; border-radius: 10px; background: #272f41; font-size: 13px; }
@@ -99,11 +99,12 @@
 
 <body>
 
-  <h1>MRKT Sniper</h1>
+  <main>
+  <h1>MRKT Gifts</h1>
 
-  <p class="muted">Панель управления поиском лотов</p>
+  <p class="muted">Каталог подарков, цены и история сделок</p>
 
-  <div class="panel">
+  <div class="panel" id="market-panel" style="display:none">
 
     <h3>Настройки поиска</h3>
 
@@ -140,11 +141,12 @@
   <div class="panel">
 
     <h3>Лоты и продажи MRKT</h3>
-    <form id="market-token-form">
+    <form id="market-token-form" hidden>
       <label for="market-token">Личный токен MRKT</label>
       <input id="market-token" type="password" autocomplete="off" maxlength="4096">
       <button type="submit">Загрузить данные MRKT</button>
     </form>
+    <p class="muted">Каталог загружается с серверного токена MRKT. Покупки и продажи отключены — доступны только цены, история и ссылки на подарки.</p>
     <label for="market-collection">Коллекция</label>
     <select id="market-collection" disabled></select>
     <label for="market-period">Период сделок</label>
@@ -159,6 +161,7 @@
     <div id="market-results"></div>
 
   </div>
+  </main>
 
   <script>
 
@@ -232,9 +235,10 @@
       const sales = recent.map(row => row.amount).sort((a, b) => a - b);
       const listings = [...data.listings].sort((a, b) => a.amount - b.amount);
       add(results, "h4", "Сравнение цен");
-      add(results, "p", listings.length ? "Минимум / средняя среди загруженных лотов: " +
+      const metrics = document.createElement("div"); metrics.className = "metric"; results.append(metrics);
+      add(metrics, "p", listings.length ? "Минимум / средняя среди загруженных лотов: " +
         price(listings[0].amount) + " / " + price(mean(listings.map(row => row.amount))) : "Активных лотов в выборке нет.");
-      add(results, "p", "Сделок за период в выборке: " + sales.length);
+      add(metrics, "p", "Сделок за период в выборке: " + sales.length);
       if (sales.length) {
         add(results, "p", "Последняя продажа: " + price(recent[0].amount) + " · " + date(recent[0].date));
         add(results, "p", "Средняя / медиана: " + price(mean(sales)) + " / " + price(median(sales)));
@@ -253,7 +257,8 @@
       for (const [title, rows] of [["Выставлены", listings], ["Проданы", recent]]) {
         add(results, "h4", title);
         for (const row of rows.slice(0, 20)) {
-          const card = add(results, "p", row.title + " · " + price(row.amount) + (row.date ? " · " + date(row.date) : ""));
+          const card = add(results, "div", ""); card.className = "trade-card";
+          add(card, "span", row.title + " · " + price(row.amount) + (row.date ? " · " + date(row.date) : ""));
           if (row.link && /^https:\/\/t\.me\/(mrkt\/app\?startapp=[\w-]+|nft\/[\w-]+)$/.test(row.link)) {
             card.append(" · ");
             add(card, "a", "Открыть подарок").href = row.link;
@@ -275,7 +280,10 @@
         }
         if (!response.ok) throw new Error();
         const next = await response.json();
-        if (!Array.isArray(next.collections) || !next.collections.length) throw new Error();
+        if (!Array.isArray(next.collections) || !next.collections.length) {
+          status.textContent = next.error || "Публичная лента пока недоступна.";
+          return;
+        }
         const selected = snapshot?.collections[collection.value]?.name;
         snapshot = next;
         collection.replaceChildren(...next.collections.map((item, index) => new Option(item.name, index)));
