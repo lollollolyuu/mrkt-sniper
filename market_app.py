@@ -11,6 +11,7 @@ import aiohttp
 from aiohttp import web
 
 from refresh_market import fetch_market
+from see_guest import run_guest_feed
 
 ROOT = Path(__file__).parent
 market_slots = asyncio.Semaphore(3)
@@ -116,9 +117,17 @@ async def snapshot(request):
     return web.FileResponse(path)
 
 
+async def see_events(request):
+    return web.json_response({
+        "source": "see.tg",
+        "events": list(request.app.get("see_events", ())),
+    }, headers={"Cache-Control": "no-store"})
+
+
 app = web.Application(client_max_size=16 * 1024)
 app.router.add_get("/", index)
 app.router.add_get("/market-data.json", snapshot)
+app.router.add_get("/api/see-events", see_events)
 app.router.add_post("/api/market", market)
 init_account_db()
 
@@ -130,7 +139,19 @@ async def start_bot(app):
     except Exception as error:
         print(f"Не удалось загрузить Telegram-бота: {error}")
         return
-    app["bot_task"] = asyncio.create_task(bot_main(), name="telegram-bot")
+    task = asyncio.create_task(bot_main(), name="telegram-bot")
+
+    def report_bot_failure(done_task):
+        # Never let a failed polling task look like a healthy web-only deploy.
+        try:
+            error = done_task.exception()
+        except asyncio.CancelledError:
+            return
+        if error is not None:
+            print(f"Telegram polling stopped: {type(error).__name__}: {error}", flush=True)
+
+    task.add_done_callback(report_bot_failure)
+    app["bot_task"] = task
 
 
 async def stop_bot(app):
@@ -144,6 +165,22 @@ async def stop_bot(app):
 
 app.on_startup.append(start_bot)
 app.on_cleanup.append(stop_bot)
+
+
+async def start_guest_feed(app):
+    app["see_task"] = asyncio.create_task(run_guest_feed(app), name="see-tg-guest-feed")
+
+
+async def stop_guest_feed(app):
+    task = app.get("see_task")
+    if task:
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+
+app.on_startup.append(start_guest_feed)
+app.on_cleanup.append(stop_guest_feed)
 
 if __name__ == "__main__":
     web.run_app(app, host=os.getenv("HOST", "0.0.0.0"), port=int(os.getenv("PORT", "8080")), access_log=None)
