@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import os
 import sqlite3
 import time
@@ -56,6 +57,10 @@ async def market(request):
         return web.Response(status=400, headers=headers)
     if not isinstance(token, str):
         token = ""
+    # Read-only shared catalog mode: keep the MRKT token only on the server.
+    shared_token = os.getenv("MRKT_TOKEN", "").strip()
+    if shared_token:
+        token = shared_token
     if token:
         if not 1 <= len(token) <= 4096 or not all(33 <= ord(char) <= 126 for char in token):
             return web.Response(status=400, headers=headers)
@@ -76,7 +81,7 @@ async def market(request):
         save_account(user_id, token)
     if not token:
             return web.json_response({"error": "Сначала один раз введите личный токен MRKT."}, status=400, headers=headers)
-    if body.get("token"):
+    if body.get("token") and not shared_token:
         save_account(user_id, token)
     if market_slots.locked():
         return web.Response(status=503, headers=headers)
@@ -107,6 +112,29 @@ app = web.Application(client_max_size=16 * 1024)
 app.router.add_get("/", index)
 app.router.add_get("/market-data.json", snapshot)
 app.router.add_post("/api/market", market)
+
+
+async def start_bot(app):
+    """Run the Telegram polling loop alongside the free web service."""
+    try:
+        from bot import main as bot_main
+    except Exception as error:
+        print(f"Не удалось загрузить Telegram-бота: {error}")
+        return
+    app["bot_task"] = asyncio.create_task(bot_main(), name="telegram-bot")
+
+
+async def stop_bot(app):
+    task = app.get("bot_task")
+    if task is None:
+        return
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
+
+
+app.on_startup.append(start_bot)
+app.on_cleanup.append(stop_bot)
 
 if __name__ == "__main__":
     web.run_app(app, host=os.getenv("HOST", "0.0.0.0"), port=int(os.getenv("PORT", "8080")), access_log=None)
