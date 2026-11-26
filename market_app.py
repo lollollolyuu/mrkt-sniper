@@ -17,7 +17,7 @@ market_slots = asyncio.Semaphore(3)
 ACCOUNT_DB = ROOT / "mrkt_accounts.sqlite3"
 
 
-def save_account(user_id, token):
+def init_account_db():
     with sqlite3.connect(ACCOUNT_DB) as db:
         db.execute("""CREATE TABLE IF NOT EXISTS mrkt_accounts (
             telegram_user_id INTEGER PRIMARY KEY,
@@ -25,6 +25,11 @@ def save_account(user_id, token):
             connected_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL
         )""")
+
+
+def save_account(user_id, token):
+    init_account_db()
+    with sqlite3.connect(ACCOUNT_DB) as db:
         now = int(time.time())
         db.execute("""INSERT INTO mrkt_accounts
             (telegram_user_id, mrkt_token, connected_at, updated_at)
@@ -42,7 +47,10 @@ async def market(request):
         body = await request.json()
         token = body.get("token") if isinstance(body, dict) else None
     except ValueError:
+        body = {}
         token = None
+    if not isinstance(body, dict):
+        return web.Response(status=400, headers=headers)
     user_id = body.get("telegram_user_id")
     init_data = body.get("telegram_init_data")
     if isinstance(init_data, str) and init_data:
@@ -112,6 +120,7 @@ app = web.Application(client_max_size=16 * 1024)
 app.router.add_get("/", index)
 app.router.add_get("/market-data.json", snapshot)
 app.router.add_post("/api/market", market)
+init_account_db()
 
 
 async def start_bot(app):
