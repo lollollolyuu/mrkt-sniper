@@ -180,7 +180,8 @@ async def market_listings():
         load_dotenv(Path(__file__).with_name(".env"), override=True)
         token = (os.getenv("MRKT_TOKEN") or os.getenv("MRKT_ACCESS_TOKEN") or "").strip()
         if not token:
-            return "Доступ к MRKT ещё не настроен: администратору нужно добавить MRKT_TOKEN в .env."
+            return ("Токен MRKT не требуется. Используется публичная лента see.tg, "
+                    "но сейчас она временно недоступна. Попробуй позже или открой мини-приложение.")
         headers = {"Authorization": token, "Referer": "https://cdn.tgmrkt.io/"}
         filters = {"count": 5, "cursor": "", "ordering": "Price", "lowToHigh": True,
                    "collectionNames": [], "modelNames": [], "backdropNames": [], "symbolNames": []}
