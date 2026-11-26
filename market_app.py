@@ -2,6 +2,8 @@ import asyncio
 import os
 import sqlite3
 import time
+import json
+from urllib.parse import parse_qs
 from pathlib import Path
 
 import aiohttp
@@ -40,14 +42,42 @@ async def market(request):
         token = body.get("token") if isinstance(body, dict) else None
     except ValueError:
         token = None
-    if not isinstance(token, str) or not 1 <= len(token) <= 4096 or not all(
-        33 <= ord(char) <= 126 for char in token
-    ):
-        return web.Response(status=400, headers=headers)
     user_id = body.get("telegram_user_id")
+    init_data = body.get("telegram_init_data")
+    if isinstance(init_data, str) and init_data:
+        try:
+            parsed = parse_qs(init_data)
+            user = json.loads(parsed["user"][0])
+            if isinstance(user.get("id"), int):
+                user_id = user["id"]
+        except (KeyError, ValueError, TypeError, json.JSONDecodeError):
+            return web.json_response({"error": "Некорректные данные Telegram Mini App."}, status=400, headers=headers)
     if not isinstance(user_id, int) or user_id <= 0:
         return web.Response(status=400, headers=headers)
-    save_account(user_id, token)
+    if not isinstance(token, str):
+        token = ""
+    if token:
+        if not 1 <= len(token) <= 4096 or not all(33 <= ord(char) <= 126 for char in token):
+            return web.Response(status=400, headers=headers)
+    else:
+        with sqlite3.connect(ACCOUNT_DB) as db:
+            row = db.execute("SELECT mrkt_token FROM mrkt_accounts WHERE telegram_user_id = ?", (user_id,)).fetchone()
+        token = row[0] if row else ""
+    if not token and isinstance(init_data, str) and init_data:
+        try:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as session:
+                async with session.post("https://api.tgmrkt.io/api/v1/auth", json={"data": init_data}) as response:
+                    auth = await response.json()
+            token = auth.get("token") if isinstance(auth, dict) else None
+        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, TypeError):
+            token = None
+        if not isinstance(token, str) or not token:
+            return web.json_response({"error": "MRKT не подтвердил Telegram-сессию."}, status=401, headers=headers)
+        save_account(user_id, token)
+    if not token:
+            return web.json_response({"error": "Сначала один раз введите личный токен MRKT."}, status=400, headers=headers)
+    if body.get("token"):
+        save_account(user_id, token)
     if market_slots.locked():
         return web.Response(status=503, headers=headers)
     async with market_slots:
