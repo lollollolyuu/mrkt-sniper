@@ -139,11 +139,24 @@
 
   <div class="panel">
 
-    <h3>Найденные лоты</h3>
-
-    <p class="muted">Пока лоты не подключены к боту.</p>
-
-    <div id="lots"></div>
+    <h3>Лоты и продажи MRKT</h3>
+    <form id="market-token-form">
+      <label for="market-token">Личный токен MRKT</label>
+      <input id="market-token" type="password" autocomplete="off" maxlength="4096" required>
+      <button type="submit">Загрузить данные MRKT</button>
+    </form>
+    <label for="market-collection">Коллекция</label>
+    <select id="market-collection" disabled></select>
+    <label for="market-period">Период сделок</label>
+    <select id="market-period">
+      <option value="1">1 час</option>
+      <option value="24">24 часа</option>
+      <option value="168" selected>7 дней</option>
+      <option value="720">30 дней</option>
+      <option value="0">Вся загруженная история</option>
+    </select>
+    <p id="market-status" role="status">Загрузка данных MRKT…</p>
+    <div id="market-results"></div>
 
   </div>
 
@@ -191,6 +204,111 @@
 
   </script>
 
+  <script>
+  (() => {
+    const collection = document.querySelector("#market-collection");
+    const period = document.querySelector("#market-period");
+    const status = document.querySelector("#market-status");
+    const results = document.querySelector("#market-results");
+    const ton = new Intl.NumberFormat("ru", {maximumFractionDigits: 9});
+    const price = value => ton.format(value / 1e9) + " TON";
+    const date = value => new Date(value).toLocaleString("ru");
+    const mean = values => values.reduce((sum, value) => sum + value, 0) / values.length;
+    const median = values => (values[Math.floor((values.length - 1) / 2)] + values[Math.floor(values.length / 2)]) / 2;
+    let snapshot;
+    function add(parent, tag, text) {
+      const element = document.createElement(tag);
+      element.textContent = text;
+      parent.append(element);
+      return element;
+    }
+    function render() {
+      results.replaceChildren();
+      const data = snapshot.collections[collection.value];
+      if (!data) return;
+      const cutoff = Number(period.value) ? Date.now() - Number(period.value) * 3600000 : 0;
+      const recent = data.sales.filter(row => Date.parse(row.date) >= cutoff)
+        .sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
+      const sales = recent.map(row => row.amount).sort((a, b) => a - b);
+      const listings = [...data.listings].sort((a, b) => a.amount - b.amount);
+      add(results, "h4", "Сравнение цен");
+      add(results, "p", listings.length ? "Минимум / средняя среди загруженных лотов: " +
+        price(listings[0].amount) + " / " + price(mean(listings.map(row => row.amount))) : "Активных лотов в выборке нет.");
+      add(results, "p", "Сделок за период в выборке: " + sales.length);
+      if (sales.length) {
+        add(results, "p", "Последняя продажа: " + price(recent[0].amount) + " · " + date(recent[0].date));
+        add(results, "p", "Средняя / медиана: " + price(mean(sales)) + " / " + price(median(sales)));
+        add(results, "p", "Минимум / максимум: " + price(sales[0]) + " / " + price(sales.at(-1)));
+      }
+      const baseline = sales.length ? median(sales) : null;
+      const markup = listings.length && baseline ? listings[0].amount / baseline - 1 : null;
+      if (markup !== null) add(results, "p", "Отклонение минимальной цены от медианы продаж: " +
+        new Intl.NumberFormat("ru", {style:"percent", maximumFractionDigits:1, signDisplay:"always"}).format(markup));
+      const flags = [];
+      if (markup >= 0.2) flags.push("минимальный лот на 20% или больше выше медианы");
+      if (recent.length && Date.now() - Date.parse(recent[0].date) > 48 * 3600000) flags.push("последняя сделка старше 48 часов");
+      if (sales.length >= 5 && (sales.at(-1) - sales[0]) / baseline >= 0.5) flags.push("широкий разброс цен");
+      add(results, "p", "Риск: " + (flags.length ? flags.join("; ") :
+        sales.length < 5 || !listings.length ? "недостаточно данных" : "по этой выборке предупреждений нет"));
+      for (const [title, rows] of [["Выставлены", listings], ["Проданы", recent]]) {
+        add(results, "h4", title);
+        for (const row of rows.slice(0, 20)) {
+          const card = add(results, "p", row.title + " · " + price(row.amount) + (row.date ? " · " + date(row.date) : ""));
+          if (row.link && /^https:\/\/t\.me\/(mrkt\/app\?startapp=[\w-]+|nft\/[\w-]+)$/.test(row.link)) {
+            card.append(" · ");
+            add(card, "a", "Открыть подарок").href = row.link;
+          }
+        }
+      }
+    }
+    async function refresh(token) {
+      try {
+        const response = await fetch(token ? "./api/market" : "./market-data.json", {
+          cache: "no-store",
+          ...(token ? {method:"POST", headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({token, telegram_user_id: tg.initDataUnsafe?.user?.id})} : {})
+        });
+        if (response.status === 401 && token) {
+          status.textContent = "MRKT отклонил токен. Проверь его и попробуй снова.";
+          return;
+        }
+        if (!response.ok) throw new Error();
+        const next = await response.json();
+        if (!Array.isArray(next.collections) || !next.collections.length) throw new Error();
+        const selected = snapshot?.collections[collection.value]?.name;
+        snapshot = next;
+        collection.replaceChildren(...next.collections.map((item, index) => new Option(item.name, index)));
+        collection.selectedIndex = Math.max(0, next.collections.findIndex(item => item.name === selected));
+        collection.disabled = false;
+        status.textContent = "Данные на " + date(next.updatedAt) + ". Статистика по загруженной выборке.";
+        render();
+      } catch {
+        status.textContent = snapshot ? "Обновление недоступно. Показаны данные на " + date(snapshot.updatedAt) :
+          "Данные MRKT пока недоступны.";
+      }
+    }
+    collection.addEventListener("change", render);
+    period.addEventListener("change", render);
+    const form = document.querySelector("#market-token-form");
+    form.addEventListener("submit", async event => {
+      event.preventDefault();
+      if (!window.isSecureContext || location.protocol === "file:") {
+        status.textContent = "Для подключения токена открой мини-приложение через защищённый сервер.";
+        return;
+      }
+      const field = document.querySelector("#market-token");
+      const token = field.value.trim();
+      if (!token) return;
+      field.value = "";
+      const button = form.querySelector("button");
+      button.disabled = true;
+      status.textContent = "Загрузка данных MRKT…";
+      try { await refresh(token); }
+      finally { button.disabled = false; }
+    });
+    refresh();
+  })();
+  </script>
 </body>
 
 </html>
