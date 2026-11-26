@@ -79,5 +79,5 @@ app.router.add_get("/market-data.json", snapshot)
 app.router.add_post("/api/market", market)
 
 if __name__ == "__main__":
-    web.run_app(app, host=os.getenv("HOST", "127.0.0.1"), port=int(os.getenv("PORT", "8080")), access_log=None)
+    web.run_app(app, host=os.getenv("HOST", "0.0.0.0"), port=int(os.getenv("PORT", "8080")), access_log=None)
 
