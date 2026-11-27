@@ -4,6 +4,7 @@ import os
 import sqlite3
 import time
 import json
+import re
 from urllib.parse import parse_qs
 from pathlib import Path
 from datetime import datetime, timezone
@@ -84,14 +85,24 @@ def guest_snapshot(events):
         ]
         gift_link = next((value for value in link_candidates
                           if isinstance(value, str) and value.startswith(("https://", "http://"))), None)
+        if gift_link and gift_link.startswith("https://t.me/nft/"):
+            gift_link = gift_link if re.fullmatch(
+                r"https://t\.me/nft/[A-Za-z0-9_]+-[1-9][0-9]*", gift_link) else None
         if gift_link:
             row["link"] = gift_link
         else:
             nft_slug = next((gift.get(key) for key in
                              ("slug", "username", "nft", "nft_slug", "nftSlug")
                              if isinstance(gift.get(key), str) and gift.get(key).strip()), None)
-            if nft_slug:
-                row["link"] = f"https://t.me/nft/{nft_slug.strip().lstrip('/')}"
+            slug = nft_slug.strip().lstrip("/") if nft_slug else ""
+            if not re.fullmatch(r"[A-Za-z0-9_]+-[1-9][0-9]*", slug):
+                number_value = gift.get("number")
+                if isinstance(number_value, int) and number_value > 0:
+                    base = re.sub(r"[^A-Za-z0-9_]", "", slug or name)
+                    if base:
+                        slug = f"{base}-{number_value}"
+            if re.fullmatch(r"[A-Za-z0-9_]+-[1-9][0-9]*", slug):
+                row["link"] = f"https://t.me/nft/{slug}"
         if kind in {"sale", "sold"}:
             bucket["sales"].append(row)
         elif kind not in {"delisting", "delisted"}:
