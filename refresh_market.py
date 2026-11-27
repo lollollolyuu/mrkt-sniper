@@ -59,12 +59,6 @@ def row(gift, amount, date=None):
         result["link"] = gift_link
     else:
         slug = nft_slug.strip().lstrip("/") if nft_slug else ""
-        if not re.fullmatch(r"[A-Za-z0-9_]+-[1-9][0-9]*", slug):
-            number_value = gift.get("number")
-            if isinstance(number_value, int) and number_value > 0:
-                base = re.sub(r"[^A-Za-z0-9_]", "", slug or name)
-                if base:
-                    slug = f"{base}-{number_value}"
         if re.fullmatch(r"[A-Za-z0-9_]+-[1-9][0-9]*", slug):
             result["link"] = f"https://t.me/nft/{slug}"
     if date is not None:
