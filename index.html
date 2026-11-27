@@ -215,6 +215,7 @@
     const mean = values => values.reduce((sum, value) => sum + value, 0) / values.length;
     const median = values => (values[Math.floor((values.length - 1) / 2)] + values[Math.floor(values.length / 2)]) / 2;
     let snapshot;
+    const cacheKey = "mrktSnapshot";
     function add(parent, tag, text) {
       const element = document.createElement(tag);
       element.textContent = text;
@@ -287,6 +288,7 @@
         }
         const selected = snapshot?.collections[collection.value]?.name;
         snapshot = next;
+        try { sessionStorage.setItem(cacheKey, JSON.stringify(next)); } catch {}
         collection.replaceChildren(...next.collections.map((item, index) => new Option(item.name, index)));
         collection.selectedIndex = Math.max(0, next.collections.findIndex(item => item.name === selected));
         collection.disabled = false;
@@ -316,6 +318,16 @@
       try { await refresh(token); }
       finally { button.disabled = false; }
     });
+    try {
+      const cached = JSON.parse(sessionStorage.getItem(cacheKey) || "null");
+      if (cached && Array.isArray(cached.collections) && cached.collections.length) {
+        snapshot = cached;
+        collection.replaceChildren(...cached.collections.map((item, index) => new Option(item.name, index)));
+        collection.disabled = false;
+        status.textContent = "Показываю сохранённые данные, обновляю…";
+        render();
+      }
+    } catch {}
     refresh("", true);
   })();
   </script>
