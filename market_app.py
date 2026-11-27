@@ -76,6 +76,8 @@ def guest_snapshot(events):
         # `startapp` opens MRKT but loses the selected gift.  Telegram NFT
         # usernames/slugs are safe fallbacks when the feed exposes them.
         gift_id = gift.get("id")
+        if gift_id is not None and re.fullmatch(r"[A-Za-z0-9_-]+", str(gift_id)):
+            row["marketLink"] = f"https://t.me/mrkt/app?startapp={gift_id}"
         link_candidates = [
             event.get(key) for key in
             ("link", "url", "market_url", "marketUrl", "deep_link", "deepLink", "gift_link", "giftLink")

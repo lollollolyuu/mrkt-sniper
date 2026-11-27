@@ -23,6 +23,9 @@ def row(gift, amount, date=None):
     number = gift.get("number")
     result = {"title": f"{name} #{number}" if type(number) is int else name, "amount": amount,
               "collection": gift.get("collectionName") or name}
+    gift_id = gift.get("id")
+    if gift_id is not None and re.fullmatch(r"[A-Za-z0-9_-]+", str(gift_id)):
+        result["marketLink"] = f"https://t.me/mrkt/app?startapp={gift_id}"
     if isinstance(number, (int, str)):
         result["number"] = number
     # MRKT has used several names for these fields over time.  Keep the
