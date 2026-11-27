@@ -145,7 +145,7 @@ async def market(request):
         try:
             async with asyncio.timeout(15):
                 snapshot = await fetch_market(token)
-                market_cache.update(token=token, snapshot=snapshot, expires=time.monotonic() + 10)
+                market_cache.update(token=token, snapshot=snapshot, expires=time.monotonic() + 30)
                 return web.json_response(snapshot, headers=headers)
         except ValueError as error:
             if str(error).endswith(("HTTP 401.", "HTTP 403.")):
