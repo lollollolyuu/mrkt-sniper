@@ -70,14 +70,28 @@ def guest_snapshot(events):
         at = event.get("at") or event.get("date")
         if isinstance(at, str):
             row["date"] = at
+        # Prefer the canonical URL supplied by MRKT/see.tg.  A raw numeric
+        # gift id is not a valid MRKT deep-link by itself: using it as
+        # `startapp` opens MRKT but loses the selected gift.  Telegram NFT
+        # usernames/slugs are safe fallbacks when the feed exposes them.
         gift_id = gift.get("id")
-        gift_link = next((gift.get(key) for key in
-                          ("link", "url", "market_url", "marketUrl", "deep_link", "deepLink")
-                          if isinstance(gift.get(key), str) and gift.get(key).startswith(("https://", "http://"))), None)
+        link_candidates = [
+            event.get(key) for key in
+            ("link", "url", "market_url", "marketUrl", "deep_link", "deepLink", "gift_link", "giftLink")
+        ] + [
+            gift.get(key) for key in
+            ("link", "url", "market_url", "marketUrl", "deep_link", "deepLink", "gift_link", "giftLink")
+        ]
+        gift_link = next((value for value in link_candidates
+                          if isinstance(value, str) and value.startswith(("https://", "http://"))), None)
         if gift_link:
             row["link"] = gift_link
-        elif isinstance(gift_id, (str, int)):
-            row["link"] = f"https://t.me/mrkt/app?startapp={gift_id}"
+        else:
+            nft_slug = next((gift.get(key) for key in
+                             ("slug", "username", "nft", "nft_slug", "nftSlug")
+                             if isinstance(gift.get(key), str) and gift.get(key).strip()), None)
+            if nft_slug:
+                row["link"] = f"https://t.me/nft/{nft_slug.strip().lstrip('/')}"
         if kind in {"sale", "sold"}:
             bucket["sales"].append(row)
         elif kind not in {"delisting", "delisted"}:
