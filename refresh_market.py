@@ -39,23 +39,30 @@ def row(gift, amount, date=None):
 async def fetch_market(token):
     collections = []
     headers = {"Authorization": token, "Referer": "https://cdn.tgmrkt.io/"}
-    async with aiohttp.ClientSession(headers=headers, timeout=aiohttp.ClientTimeout(total=12)) as session:
+    async with aiohttp.ClientSession(headers=headers, timeout=aiohttp.ClientTimeout(total=12),
+                                     connector=aiohttp.TCPConnector(limit=12)) as session:
         async def fetch(endpoint, body, key):
             async with session.post(f"{BASE}/{endpoint}", json=body, allow_redirects=False) as response:
                 if response.status != 200:
                     raise ValueError(f"MRKT {endpoint}: HTTP {response.status}.")
                 return (await response.json())[key]
 
-        for name in COLLECTIONS:
+        async def fetch_collection(name):
             filters = {"collectionNames": [name], "modelNames": [], "backdropNames": [], "count": 20}
-            gifts = await fetch("gifts/saling", dict(filters, cursor="", ordering="Price", lowToHigh=True), "gifts")
-            feed = await fetch("feed", dict(filters, cursor=None, ordering="Latest", lowToHigh=False, type=["sale"]), "items")
+            gifts, feed = await asyncio.gather(
+                fetch("gifts/saling", dict(filters, cursor="", ordering="Price", lowToHigh=True), "gifts"),
+                fetch("feed", dict(filters, cursor=None, ordering="Latest", lowToHigh=False, type=["sale"]), "items"),
+            )
             listings = [item for gift in gifts if (item := row(gift, gift.get("salePrice")))]
             sales = [item for sale in feed if isinstance(sale.get("gift"), dict) and sale.get("date")
                      and (item := row(sale["gift"], sale.get("amount"), sale["date"]))]
             if (gifts and not listings) or (feed and not sales):
                 raise ValueError("Unexpected MRKT data format. No snapshot was written.")
-            collections.append({"name": name, "listings": listings, "sales": sales})
+            return {"name": name, "listings": listings, "sales": sales}
+
+        # The six collections are independent; fetching them together cuts
+        # first-load latency from roughly 12 round trips to the slowest pair.
+        collections = await asyncio.gather(*(fetch_collection(name) for name in COLLECTIONS))
     return {"updatedAt": datetime.now(timezone.utc).isoformat(), "collections": collections}
 
 
