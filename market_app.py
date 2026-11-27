@@ -48,7 +48,10 @@ def guest_snapshot(events):
         if currency == "gram":
             amount = amount
         row = {"title": gift.get("name") or name, "amount": amount,
-               "collection": gift.get("collection") or gift.get("collectionName") or name}
+               "collection": gift.get("collection") or gift.get("collectionName") or name,
+               "giftId": gift.get("id") or event.get("gift_id") or event.get("giftId"),
+               "eventId": event.get("id") or event.get("event_id"),
+               "eventType": str(event.get("event") or event.get("type") or "").lower()}
         for output, keys in {
             "model": ("model", "modelName", "model_name"),
             "backdrop": ("backdrop", "backdropName", "background", "backgroundName"),
@@ -57,7 +60,8 @@ def guest_snapshot(events):
             value = next((gift.get(key) for key in keys if isinstance(gift.get(key), str)), None)
             if value:
                 row[output] = value
-        row["status"] = "Продан" if str(event.get("event") or "").lower() in {"sale", "sold"} else "Выставлен"
+        kind = str(event.get("event") or event.get("type") or "").lower()
+        row["status"] = "Продан" if kind in {"sale", "sold"} else "Выставлен"
         if isinstance(gift.get("number"), (int, str)):
             row["number"] = gift["number"]
         image = gift.get("image") or gift.get("image_url") or gift.get("thumbnail")
@@ -74,7 +78,6 @@ def guest_snapshot(events):
             row["link"] = gift_link
         elif isinstance(gift_id, (str, int)):
             row["link"] = f"https://t.me/mrkt/app?startapp={gift_id}"
-        kind = str(event.get("event") or event.get("type") or "").lower()
         if kind in {"sale", "sold"}:
             bucket["sales"].append(row)
         elif kind not in {"delisting", "delisted"}:

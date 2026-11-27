@@ -5,16 +5,35 @@ import os
 from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
+
 import aiohttp
+
 WS_URL = "wss://live.see.tg/v1/ws"
 EVENTS_FILE = Path(__file__).with_name("see-events.json")
+MAX_EVENTS = 5000
+
 
 async def run_guest_feed(app):
     """Keep a small deduplicated event buffer; never affects bot startup."""
-    events = deque(maxlen=200)
+    events = deque(maxlen=MAX_EVENTS)
     seen = set()
+    # Keep the history across Render restarts.  The public feed is live-only,
+    # so this local snapshot is the only history available without MRKT auth.
+    try:
+        saved = json.loads(EVENTS_FILE.read_text(encoding="utf-8"))
+        if isinstance(saved, list):
+            for item in saved[:MAX_EVENTS]:
+                if isinstance(item, dict):
+                    key = str(item.get("id") or item.get("event_id") or json.dumps(item, sort_keys=True))
+                    if key not in seen:
+                        seen.add(key)
+                        events.append(item)
+    except (OSError, json.JSONDecodeError, TypeError):
+        pass
     app["see_events"] = events
     retry_delay = 5
+    # Optional HTTP(S) proxy for environments where see.tg is unreachable.
+    # Keep credentials in the hosting provider's environment, never in source.
     proxy_url = os.getenv("SEE_PROXY_URL", "").strip() or None
     while True:
         try:
@@ -24,6 +43,9 @@ async def run_guest_feed(app):
                 if proxy_url:
                     connect_kwargs["proxy"] = proxy_url
                 async with session.ws_connect(WS_URL, **connect_kwargs) as ws:
+                    # Do not send a marketplace filter here.  The public feed
+                    # accepts it as optional, but marketplace slugs can differ
+                    # in casing/aliases.  We filter MRKT after receipt.
                     await ws.send_json({"type": "subscribe", "events": ["all"]})
                     async for message in ws:
                         if message.type != aiohttp.WSMsgType.TEXT:
@@ -36,6 +58,8 @@ async def run_guest_feed(app):
                             continue
                         if not isinstance(item, dict):
                             continue
+                        if item.get("market") not in (None, "mrkt", "MRKT"):
+                            continue
                         key = str(item.get("id") or item.get("event_id") or json.dumps(item, sort_keys=True))
                         if key in seen:
                             continue
@@ -43,8 +67,9 @@ async def run_guest_feed(app):
                         item["source"] = "see.tg"
                         item["receivedAt"] = datetime.now(timezone.utc).isoformat()
                         events.appendleft(item)
-                        if len(seen) > 500:
-                            seen.clear()
+                        if len(seen) > MAX_EVENTS * 2:
+                            seen = {str(item.get("id") or item.get("event_id") or json.dumps(item, sort_keys=True))
+                                    for item in events}
                         try:
                             EVENTS_FILE.write_text(json.dumps(list(events), ensure_ascii=False), encoding="utf-8")
                         except OSError:
@@ -52,6 +77,8 @@ async def run_guest_feed(app):
                     retry_delay = 5
         except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as error:
             print(f"see.tg feed unavailable: {error}", flush=True)
+            # The public feed can be temporarily unavailable (for example, a
+            # Cloudflare 525). Back off so this never consumes the app's loop.
             await asyncio.sleep(retry_delay)
             retry_delay = min(retry_delay * 2, 300)
             continue
