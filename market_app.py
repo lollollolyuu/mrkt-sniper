@@ -50,8 +50,11 @@ def guest_snapshot(events):
         at = event.get("at") or event.get("date")
         if isinstance(at, str):
             row["date"] = at
+        gift_link = next((gift.get(key) for key in ("link", "url", "market_url", "marketUrl", "deep_link", "deepLink") if isinstance(gift.get(key), str) and gift.get(key).startswith(("https://", "http://"))), None)
         gift_id = gift.get("id")
-        if isinstance(gift_id, (str, int)):
+        if gift_link:
+            row["link"] = gift_link
+        elif isinstance(gift_id, (str, int)):
             row["link"] = f"https://t.me/mrkt/app?startapp={gift_id}"
         kind = str(event.get("event") or event.get("type") or "").lower()
         if kind in {"sale", "sold"}:
