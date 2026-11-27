@@ -42,13 +42,20 @@ def row(gift, amount, date=None):
     if image and image.startswith(("https://", "http://")):
         result["image"] = image
     gift_link = next((gift.get(key) for key in
-                      ("link", "url", "market_url", "marketUrl", "deep_link", "deepLink")
+                      ("link", "url", "market_url", "marketUrl", "deep_link", "deepLink",
+                       "gift_link", "giftLink", "marketLink", "market_link", "listingUrl",
+                       "listing_url", "listingLink", "listing_link", "telegramUrl",
+                       "telegram_url", "nftLink", "nft_link")
                       if isinstance(gift.get(key), str) and gift.get(key).startswith(("https://", "http://"))), None)
     gift_id = gift.get("id")
     if gift_link:
         result["link"] = gift_link
-    elif isinstance(gift_id, str) and re.fullmatch(r"[a-zA-Z0-9_-]{1,128}", gift_id):
-        result["link"] = f"https://t.me/mrkt/app?startapp={gift_id}"
+    else:
+        nft_slug = next((gift.get(key) for key in
+                         ("slug", "username", "nft", "nftSlug", "nft_slug")
+                         if isinstance(gift.get(key), str) and gift.get(key).strip()), None)
+        if nft_slug and re.fullmatch(r"[a-zA-Z0-9_-]{1,128}", nft_slug.strip().lstrip("/")):
+            result["link"] = f"https://t.me/nft/{nft_slug.strip().lstrip('/')}"
     if date is not None:
         try:
             timestamp = datetime.fromisoformat(date)
