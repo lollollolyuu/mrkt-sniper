@@ -5,9 +5,7 @@ import os
 from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
-
 import aiohttp
-
 WS_URL = "wss://live.see.tg/v1/ws"
 EVENTS_FILE = Path(__file__).with_name("see-events.json")
 
@@ -22,11 +20,11 @@ async def run_guest_feed(app):
         try:
             timeout = aiohttp.ClientTimeout(total=None, sock_connect=15, sock_read=None)
             async with aiohttp.ClientSession(timeout=timeout) as session:
-                kwargs = {"heartbeat": 30}
+                connect_kwargs = {"heartbeat": 30}
                 if proxy_url:
-                    kwargs["proxy"] = proxy_url
-                async with session.ws_connect(WS_URL, **kwargs) as ws:
-                    await ws.send_json({"type": "subscribe", "events": ["all"], "markets": ["mrkt"]})
+                    connect_kwargs["proxy"] = proxy_url
+                async with session.ws_connect(WS_URL, **connect_kwargs) as ws:
+                    await ws.send_json({"type": "subscribe", "events": ["all"]})
                     async for message in ws:
                         if message.type != aiohttp.WSMsgType.TEXT:
                             if message.type in (aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR):
@@ -36,7 +34,7 @@ async def run_guest_feed(app):
                             item = json.loads(message.data)
                         except (TypeError, json.JSONDecodeError):
                             continue
-                        if not isinstance(item, dict) or item.get("market") not in (None, "mrkt", "MRKT"):
+                        if not isinstance(item, dict):
                             continue
                         key = str(item.get("id") or item.get("event_id") or json.dumps(item, sort_keys=True))
                         if key in seen:
