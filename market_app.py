@@ -16,6 +16,7 @@ from see_guest import run_guest_feed
 
 ROOT = Path(__file__).parent
 market_slots = asyncio.Semaphore(3)
+market_cache = {"token": "", "snapshot": None, "expires": 0.0}
 ACCOUNT_DB = ROOT / "mrkt_accounts.sqlite3"
 
 
@@ -134,12 +135,18 @@ async def market(request):
         return web.json_response(snapshot, status=200, headers=headers)
     if body.get("token") and not shared_token:
         save_account(user_id, token)
+    now = time.monotonic()
+    if (market_cache["token"] == token and market_cache["snapshot"] is not None
+            and now < market_cache["expires"]):
+        return web.json_response(market_cache["snapshot"], headers=headers)
     if market_slots.locked():
         return web.Response(status=503, headers=headers)
     async with market_slots:
         try:
-            async with asyncio.timeout(60):
-                return web.json_response(await fetch_market(token), headers=headers)
+            async with asyncio.timeout(15):
+                snapshot = await fetch_market(token)
+                market_cache.update(token=token, snapshot=snapshot, expires=time.monotonic() + 10)
+                return web.json_response(snapshot, headers=headers)
         except ValueError as error:
             if str(error).endswith(("HTTP 401.", "HTTP 403.")):
                 return web.Response(status=401, headers=headers)
