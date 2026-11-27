@@ -1,8 +1,4 @@
-<!DOCTYPE html>
-
-<html lang="ru">
-
-<head>
+<html lang="ru" style="--tg-viewport-height: 100vh; --tg-viewport-stable-height: 100vh;"><head>
 
   <meta charset="UTF-8">
 
@@ -138,20 +134,22 @@
 </ul>
   </section>
 
-  <div class="panel" style="display:none"><h3>Лоты и продажи MRKT</h3>
-    <form id="market-token-form" hidden>
+  <div class="panel">
+
+    <h3>Лоты и продажи MRKT</h3>
+    <form id="market-token-form" hidden="">
       <label for="market-token">Личный токен MRKT</label>
       <input id="market-token" type="password" autocomplete="off" maxlength="4096">
       <button type="submit">Загрузить данные MRKT</button>
     </form>
     <p class="muted">Каталог загружается с серверного токена MRKT. Покупки и продажи отключены — доступны только цены, история и ссылки на подарки.</p>
     <label for="market-collection">Коллекция</label>
-    <select id="market-collection" disabled></select>
+    <select id="market-collection" disabled=""></select>
     <label for="market-period">Период сделок</label>
     <select id="market-period">
       <option value="1">1 час</option>
       <option value="24">24 часа</option>
-      <option value="168" selected>7 дней</option>
+      <option value="168" selected="">7 дней</option>
       <option value="720">30 дней</option>
       <option value="0">Вся загруженная история</option>
     </select>
@@ -266,11 +264,15 @@
     }
     async function refresh(token, silent = false) {
       try {
-        const response = await fetch((token || tg.initDataUnsafe?.user?.id) ? "./api/market" : "./market-data.json", {
+        // Always use the backend endpoint: without a personal token it serves
+        // the guest see.tg snapshot. The static market-data.json is only a
+        // legacy fallback and contains no live guest events.
+        const response = await fetch("./api/market", {
           cache: "no-store",
-          ...(token || tg.initDataUnsafe?.user?.id ? {method:"POST", headers:{"Content-Type":"application/json"},
-            body:JSON.stringify({token, telegram_user_id: tg.initDataUnsafe?.user?.id,
-              telegram_init_data: tg.initData || ""})} : {})
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({token, telegram_user_id: tg.initDataUnsafe?.user?.id,
+            telegram_init_data: tg.initData || ""})
         });
         if (response.status === 401 && token) {
           status.textContent = "MRKT отклонил токен. Проверь его и попробуй снова.";
@@ -316,6 +318,7 @@
     refresh("", true);
   })();
   </script>
-</body>
 
-</html>
+
+
+</body><div id="codex-browser-sidebar-comments-root" style="position: fixed; inset: 0px; pointer-events: none; z-index: 2147483647;"></div></html>
