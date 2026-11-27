@@ -642,7 +642,7 @@ async def main():
     health_app.router.add_get("/healthz", lambda request: aiohttp.web.json_response({"ok": True}))
     health_runner = aiohttp.web.AppRunner(health_app)
     await health_runner.setup()
-    health_site = aiohttp.web.TCPSite(health_runner, "0.0.0.0", int(os.getenv("PORT", "10000")))
+    health_site = aiohttp.web.TCPSite(health_runner, "0.0.0.0", int(os.getenv("BOT_HEALTH_PORT", "10001")))
     await health_site.start()
     await bot.set_my_commands([
         BotCommand(command="start", description="Открыть бота"),
