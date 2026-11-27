@@ -48,7 +48,7 @@ PAYMENT_DB = Path(__file__).with_name("subscriptions.sqlite3")
 STARS = "XTR"
 CRYPTO_PAY_API = "https://pay.crypt.bot/api"
 CRYPTO_PAY_TOKEN = os.getenv("CRYPTO_PAY_TOKEN", "").strip()
-CRYPTO_ASSET = os.getenv("CRYPTO_ASSET", "TON").strip().upper() or "TON"
+CRYPTO_ASSET = os.getenv("CRYPTO_ASSET", "GRAM").strip().upper() or "GRAM"
 DEFAULT_GRAM_PRICES = {name: 0.0 for name in DEFAULT_PRICES}
 
 
