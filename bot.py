@@ -637,6 +637,13 @@ async def main():
     init_payments()
     bot = Bot(token=TOKEN)
     watcher = asyncio.create_task(crypto_payment_watcher(bot))
+    health_app = aiohttp.web.Application()
+    health_app.router.add_get("/", lambda request: aiohttp.web.json_response({"ok": True, "service": "mrkt-sniper-bot"}))
+    health_app.router.add_get("/healthz", lambda request: aiohttp.web.json_response({"ok": True}))
+    health_runner = aiohttp.web.AppRunner(health_app)
+    await health_runner.setup()
+    health_site = aiohttp.web.TCPSite(health_runner, "0.0.0.0", int(os.getenv("PORT", "10000")))
+    await health_site.start()
     await bot.set_my_commands([
         BotCommand(command="start", description="Открыть бота"),
         BotCommand(command="lots", description="Показать лоты MRKT"),
@@ -653,10 +660,13 @@ async def main():
             BotCommand(command="admin", description="Управление тарифами"),
             BotCommand(command="paysupport", description="Помощь с оплатой"),
         ], scope=BotCommandScopeChat(chat_id=ADMIN_ID))
+    polling = asyncio.create_task(dp.start_polling(bot))
     try:
-        await dp.start_polling(bot)
+        await polling
     finally:
+        polling.cancel()
         watcher.cancel()
+        await health_runner.cleanup()
         await bot.session.close()
 
 
