@@ -207,7 +207,17 @@ async def market(request):
 
 
 async def index(request):
-    return web.FileResponse(ROOT / "index.html")
+    # Telegram's in-app browser may cache the Mini App aggressively.  Always
+    # serve the current design so an older cached index cannot reappear.
+    return web.FileResponse(
+        ROOT / "index.html",
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+            "X-App-Version": "mrkt-gifts-v2",
+        },
+    )
 
 
 async def snapshot(request):
