@@ -22,8 +22,11 @@ def row(gift, amount, date=None):
         return None
     number = gift.get("number")
     result = {"title": f"{name} #{number}" if type(number) is int else name, "amount": amount}
+    gift_link = next((gift.get(key) for key in ("link", "url", "market_url", "marketUrl", "deep_link", "deepLink") if isinstance(gift.get(key), str) and gift.get(key).startswith(("https://", "http://"))), None)
     gift_id = gift.get("id")
-    if isinstance(gift_id, str) and re.fullmatch(r"[a-zA-Z0-9_-]{1,128}", gift_id):
+    if gift_link:
+        result["link"] = gift_link
+    elif isinstance(gift_id, str) and re.fullmatch(r"[a-zA-Z0-9_-]{1,128}", gift_id):
         result["link"] = f"https://t.me/mrkt/app?startapp={gift_id}"
     if date is not None:
         try:
