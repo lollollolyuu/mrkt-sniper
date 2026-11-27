@@ -29,6 +29,13 @@ from aiogram.types import (
 )
 from dotenv import load_dotenv
 
+try:
+    import psycopg2
+    from psycopg2.extras import Json
+except ImportError:
+    psycopg2 = None
+    Json = None
+
 load_dotenv(Path(__file__).with_name(".env"))
 
 TOKEN = os.getenv("BOT_TOKEN", "").strip()
@@ -36,23 +43,46 @@ ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
 PRICE_FILE = Path(__file__).with_name("subscription_prices.json")
 GRAM_PRICE_FILE = Path(__file__).with_name("subscription_gram_prices.json")
 
-DEFAULT_PRICES = {
-    "1 час": 0,
-    "3 часа": 0,
-    "6 часов": 0,
-    "1 день": 0,
-    "1 месяц": 0,
-}
+DEFAULT_PRICES = {"1 час": 50, "3 часа": 60, "6 часов": 75, "1 день": 100, "1 месяц": 450}
 PLAN_SECONDS = dict(zip(DEFAULT_PRICES, (3600, 10800, 21600, 86400, 2592000), strict=True))
 PAYMENT_DB = Path(__file__).with_name("subscriptions.sqlite3")
 STARS = "XTR"
 CRYPTO_PAY_API = "https://pay.crypt.bot/api"
 CRYPTO_PAY_TOKEN = os.getenv("CRYPTO_PAY_TOKEN", "").strip()
 CRYPTO_ASSET = os.getenv("CRYPTO_ASSET", "GRAM").strip().upper() or "GRAM"
-DEFAULT_GRAM_PRICES = {name: 0.0 for name in DEFAULT_PRICES}
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+DEFAULT_GRAM_PRICES = {"1 час": 0.5, "3 часа": 0.9, "6 часов": 1.4, "1 день": 1.7, "1 месяц": 6.5}
+
+
+def _pg_settings(key):
+    if not (DATABASE_URL and psycopg2):
+        return None
+    try:
+        with psycopg2.connect(DATABASE_URL) as db, db.cursor() as cur:
+            cur.execute("CREATE TABLE IF NOT EXISTS payment_settings (key TEXT PRIMARY KEY, value JSONB NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())")
+            cur.execute("SELECT value FROM payment_settings WHERE key = %s", (key,))
+            row = cur.fetchone()
+            return row[0] if row else None
+    except Exception:
+        return None
+
+
+def _pg_save_settings(key, value):
+    if not (DATABASE_URL and psycopg2):
+        return False
+    try:
+        with psycopg2.connect(DATABASE_URL) as db, db.cursor() as cur:
+            cur.execute("CREATE TABLE IF NOT EXISTS payment_settings (key TEXT PRIMARY KEY, value JSONB NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())")
+            cur.execute("INSERT INTO payment_settings (key, value) VALUES (%s, %s) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()", (key, Json(value)))
+        return True
+    except Exception:
+        return False
 
 
 def load_prices():
+    saved = _pg_settings("stars_prices")
+    if isinstance(saved, dict):
+        return {name: int(saved.get(name, default)) for name, default in DEFAULT_PRICES.items()}
     if PRICE_FILE.exists():
         try:
             saved = json.loads(PRICE_FILE.read_text(encoding="utf-8"))
@@ -72,6 +102,9 @@ SUBSCRIPTIONS = load_prices()
 
 
 def load_gram_prices():
+    saved = _pg_settings("gram_prices")
+    if isinstance(saved, dict):
+        return {name: float(saved.get(name, default)) for name, default in DEFAULT_GRAM_PRICES.items()}
     if GRAM_PRICE_FILE.exists():
         try:
             saved = json.loads(GRAM_PRICE_FILE.read_text(encoding="utf-8"))
@@ -91,17 +124,13 @@ GRAM_SUBSCRIPTIONS = load_gram_prices()
 
 
 def save_prices():
-    PRICE_FILE.write_text(
-        json.dumps(SUBSCRIPTIONS, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    if not _pg_save_settings("stars_prices", SUBSCRIPTIONS):
+        PRICE_FILE.write_text(json.dumps(SUBSCRIPTIONS, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def save_gram_prices():
-    GRAM_PRICE_FILE.write_text(
-        json.dumps(GRAM_SUBSCRIPTIONS, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    if not _pg_save_settings("gram_prices", GRAM_SUBSCRIPTIONS):
+        GRAM_PRICE_FILE.write_text(json.dumps(GRAM_SUBSCRIPTIONS, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 class PriceState(StatesGroup):
@@ -626,7 +655,7 @@ async def set_price(message: Message, state: FSMContext):
     )
 
 
-async def main():
+async def main(start_health=True):
     if not TOKEN:
         print("Нет BOT_TOKEN в файле .env")
         return
@@ -637,13 +666,15 @@ async def main():
     init_payments()
     bot = Bot(token=TOKEN)
     watcher = asyncio.create_task(crypto_payment_watcher(bot))
-    health_app = aiohttp.web.Application()
-    health_app.router.add_get("/", lambda request: aiohttp.web.json_response({"ok": True, "service": "mrkt-sniper-bot"}))
-    health_app.router.add_get("/healthz", lambda request: aiohttp.web.json_response({"ok": True}))
-    health_runner = aiohttp.web.AppRunner(health_app)
-    await health_runner.setup()
-    health_site = aiohttp.web.TCPSite(health_runner, "0.0.0.0", int(os.getenv("BOT_HEALTH_PORT", "10001")))
-    await health_site.start()
+    health_runner = None
+    if start_health:
+        health_app = aiohttp.web.Application()
+        health_app.router.add_get("/", lambda request: aiohttp.web.json_response({"ok": True, "service": "mrkt-sniper-bot"}))
+        health_app.router.add_get("/healthz", lambda request: aiohttp.web.json_response({"ok": True}))
+        health_runner = aiohttp.web.AppRunner(health_app)
+        await health_runner.setup()
+        health_site = aiohttp.web.TCPSite(health_runner, "0.0.0.0", int(os.getenv("PORT", "10000")))
+        await health_site.start()
     await bot.set_my_commands([
         BotCommand(command="start", description="Открыть бота"),
         BotCommand(command="lots", description="Показать лоты MRKT"),
@@ -666,7 +697,8 @@ async def main():
     finally:
         polling.cancel()
         watcher.cancel()
-        await health_runner.cleanup()
+        if health_runner is not None:
+            await health_runner.cleanup()
         await bot.session.close()
 
 
