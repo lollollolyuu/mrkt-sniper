@@ -121,17 +121,6 @@ async def market(request):
         with sqlite3.connect(ACCOUNT_DB) as db:
             row = db.execute("SELECT mrkt_token FROM mrkt_accounts WHERE telegram_user_id = ?", (user_id,)).fetchone()
         token = row[0] if row else ""
-    if not token and isinstance(init_data, str) and init_data:
-        try:
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as session:
-                async with session.post("https://api.tgmrkt.io/api/v1/auth", json={"data": init_data}) as response:
-                    auth = await response.json()
-            token = auth.get("token") if isinstance(auth, dict) else None
-        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, TypeError):
-            token = None
-        if not isinstance(token, str) or not token:
-            return web.json_response({"error": "MRKT не подтвердил Telegram-сессию."}, status=401, headers=headers)
-        save_account(user_id, token)
     if not token:
         # Guest mode: no MRKT token is required. The public see.tg feed is
         # exposed separately and may be empty while that upstream is offline.
