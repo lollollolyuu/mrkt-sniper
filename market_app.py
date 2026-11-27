@@ -18,6 +18,10 @@ ROOT = Path(__file__).parent
 market_slots = asyncio.Semaphore(3)
 market_cache = {"token": "", "snapshot": None, "expires": 0.0}
 ACCOUNT_DB = ROOT / "mrkt_accounts.sqlite3"
+DEFAULT_COLLECTIONS = (
+    "Plush Pepe", "Astral Shard", "Precious Peach",
+    "Toy Bear", "Magic Potion", "Diamond Ring",
+)
 
 
 def guest_snapshot(events):
@@ -44,26 +48,39 @@ def guest_snapshot(events):
         if currency == "gram":
             amount = amount
         row = {"title": gift.get("name") or name, "amount": amount,
-               "status": "Продан" if str(event.get("event") or "").lower() in {"sale", "sold"} else "Выставлен"}
+               "collection": gift.get("collection") or gift.get("collectionName") or name}
+        for output, keys in {
+            "model": ("model", "modelName", "model_name"),
+            "backdrop": ("backdrop", "backdropName", "background", "backgroundName"),
+            "pattern": ("pattern", "patternName", "pattern_name"),
+        }.items():
+            value = next((gift.get(key) for key in keys if isinstance(gift.get(key), str)), None)
+            if value:
+                row[output] = value
+        row["status"] = "Продан" if str(event.get("event") or "").lower() in {"sale", "sold"} else "Выставлен"
+        if isinstance(gift.get("number"), (int, str)):
+            row["number"] = gift["number"]
         image = gift.get("image") or gift.get("image_url") or gift.get("thumbnail")
         if isinstance(image, str) and image.startswith(("https://", "http://")):
             row["image"] = image
         at = event.get("at") or event.get("date")
         if isinstance(at, str):
             row["date"] = at
-        gift_link = next((gift.get(key) for key in ("link", "url", "market_url", "marketUrl", "deep_link", "deepLink") if isinstance(gift.get(key), str) and gift.get(key).startswith(("https://", "http://"))), None)
         gift_id = gift.get("id")
-        if gift_link:
-            row["link"] = gift_link
-        elif isinstance(gift_id, (str, int)):
+        if isinstance(gift_id, (str, int)):
             row["link"] = f"https://t.me/mrkt/app?startapp={gift_id}"
         kind = str(event.get("event") or event.get("type") or "").lower()
         if kind in {"sale", "sold"}:
             bucket["sales"].append(row)
         elif kind not in {"delisting", "delisted"}:
             bucket["listings"].append(row)
+    # Keep the complete catalog in the selector even when the public feed has
+    # no recent event for one of the collections.
+    collections = [grouped.pop(name, {"name": name, "listings": [], "sales": []})
+                   for name in DEFAULT_COLLECTIONS]
+    collections.extend(grouped.values())
     return {"source": "see.tg", "updatedAt": datetime.now(timezone.utc).isoformat(),
-            "collections": list(grouped.values()), "events": list(events)}
+            "collections": collections, "events": list(events)}
 
 
 def init_account_db():
@@ -133,19 +150,21 @@ async def market(request):
         if not snapshot["collections"]:
             snapshot["error"] = "Публичная лента see.tg пока недоступна или не содержит событий."
         return web.json_response(snapshot, status=200, headers=headers)
-    if body.get("token") and not shared_token:
-        save_account(user_id, token)
+    # Reuse a fresh server-side snapshot so simultaneous users do not all
+    # wait for the same MRKT requests.  A short TTL keeps prices current.
     now = time.monotonic()
     if (market_cache["token"] == token and market_cache["snapshot"] is not None
             and now < market_cache["expires"]):
         return web.json_response(market_cache["snapshot"], headers=headers)
+    if body.get("token") and not shared_token:
+        save_account(user_id, token)
     if market_slots.locked():
         return web.Response(status=503, headers=headers)
     async with market_slots:
         try:
             async with asyncio.timeout(15):
                 snapshot = await fetch_market(token)
-                market_cache.update(token=token, snapshot=snapshot, expires=time.monotonic() + 30)
+                market_cache.update(token=token, snapshot=snapshot, expires=time.monotonic() + 10)
                 return web.json_response(snapshot, headers=headers)
         except ValueError as error:
             if str(error).endswith(("HTTP 401.", "HTTP 403.")):
@@ -188,7 +207,9 @@ async def start_bot(app):
     except Exception as error:
         print(f"Не удалось загрузить Telegram-бота: {error}")
         return
-    task = asyncio.create_task(bot_main(), name="telegram-bot")
+    # The Mini App already owns Render's HTTP port.  The bot's standalone
+    # health server must be disabled when polling is embedded in this process.
+    task = asyncio.create_task(bot_main(start_health=False), name="telegram-bot")
 
     def report_bot_failure(done_task):
         # Never let a failed polling task look like a healthy web-only deploy.

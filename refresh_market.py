@@ -21,12 +21,28 @@ def row(gift, amount, date=None):
     if not isinstance(name, str):
         return None
     number = gift.get("number")
-    result = {"title": f"{name} #{number}" if type(number) is int else name, "amount": amount}
-    gift_link = next((gift.get(key) for key in ("link", "url", "market_url", "marketUrl", "deep_link", "deepLink") if isinstance(gift.get(key), str) and gift.get(key).startswith(("https://", "http://"))), None)
+    result = {"title": f"{name} #{number}" if type(number) is int else name, "amount": amount,
+              "collection": gift.get("collectionName") or name}
+    if isinstance(number, (int, str)):
+        result["number"] = number
+    # MRKT has used several names for these fields over time.  Keep the
+    # normalised metadata in the snapshot so the Mini App does not need to
+    # know the exact API response shape.
+    for output, keys in {
+        "model": ("modelName", "model", "model_name"),
+        "backdrop": ("backdropName", "backgroundName", "backdrop", "background", "backdrop_name"),
+        "pattern": ("patternName", "pattern", "pattern_name"),
+    }.items():
+        value = next((gift.get(key) for key in keys if isinstance(gift.get(key), str)), None)
+        if value:
+            result[output] = value
+    image = next((gift.get(key) for key in
+                  ("image", "imageUrl", "image_url", "imageURL", "thumbnail", "preview", "previewUrl")
+                  if isinstance(gift.get(key), str)), None)
+    if image and image.startswith(("https://", "http://")):
+        result["image"] = image
     gift_id = gift.get("id")
-    if gift_link:
-        result["link"] = gift_link
-    elif isinstance(gift_id, str) and re.fullmatch(r"[a-zA-Z0-9_-]{1,128}", gift_id):
+    if isinstance(gift_id, str) and re.fullmatch(r"[a-zA-Z0-9_-]{1,128}", gift_id):
         result["link"] = f"https://t.me/mrkt/app?startapp={gift_id}"
     if date is not None:
         try:
