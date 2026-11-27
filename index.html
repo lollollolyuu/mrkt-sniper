@@ -254,7 +254,8 @@
         add(results, "h4", title);
         for (const row of rows.slice(0, 20)) {
           const card = add(results, "div", ""); card.className = "trade-card";
-          add(card, "span", row.title + " · " + price(row.amount) + (row.date ? " · " + date(row.date) : ""));
+          if (row.image) { const image = document.createElement("img"); image.src = row.image; image.alt = ""; image.width = 48; image.height = 48; image.loading = "lazy"; card.prepend(image); }
+          add(card, "span", (row.status ? row.status + " · " : "") + row.title + " · " + price(row.amount) + (row.date ? " · " + date(row.date) : ""));
           if (row.link && /^https:\/\/t\.me\/(mrkt\/app\?startapp=[\w-]+|nft\/[\w-]+)$/.test(row.link)) {
             card.append(" · ");
             add(card, "a", "Открыть подарок").href = row.link;
